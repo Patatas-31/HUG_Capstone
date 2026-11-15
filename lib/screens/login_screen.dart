@@ -2,9 +2,10 @@
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+
 import '../constants/colors.dart';
 import '../widgets/collaboration_footer.dart';
-import 'dashboard_screen.dart';
+import 'main_shell.dart';
 import 'signup_screen.dart';
 
 // Turns everything the user types into CAPITAL letters.
@@ -12,9 +13,9 @@ import 'signup_screen.dart';
 class UpperCaseTextFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue,
-      TextEditingValue newValue,
-      ) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     return newValue.copyWith(text: newValue.text.toUpperCase());
   }
 }
@@ -31,8 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // TEXT BOXES AND FOCUS
   // ---------------------------------------------------
   // Text boxes: these hold what the user types
-  final TextEditingController studentNumberController =
-  TextEditingController();
+  final TextEditingController studentNumberController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
   // Focus nodes: we use these to jump to the first box that has an error
@@ -156,7 +156,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // ---------------------------------------------------
   // Asks the server if the student number and password are correct.
   // Right now it always says "correct", so it goes straight to the
-  // Dashboard like before. Replace the body with your real backend call.
+  // Home screen like before. Replace the body with your real backend call.
   Future<bool> checkLogin(String studentNumber, String password) async {
     // TODO: call your backend here and return true only if the login is correct
     return true;
@@ -172,8 +172,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!validateForm()) return;
 
     // Make the student number uppercase and remove extra spaces
-    studentNumberController.text =
-        studentNumberController.text.trim().toUpperCase();
+    studentNumberController.text = studentNumberController.text
+        .trim()
+        .toUpperCase();
 
     // Ask the backend if the login is correct
     setState(() {
@@ -203,12 +204,11 @@ class _LoginScreenState extends State<LoginScreen> {
     // TODO: if rememberMe is true, save the login here.
     // pushAndRemoveUntil clears the old screens,
     // so back does not return to Log in.
+    // MainShell holds the bottom bar and the Home / Insights tabs.
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (context) => const DashboardScreen(),
-      ),
-          (route) => false,
+      MaterialPageRoute(builder: (context) => const MainShell()),
+      (route) => false,
     );
   }
 
@@ -425,22 +425,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             shape: const StadiumBorder(),
                           ),
                           child: isLoggingIn
-                          // Small spinner while logging in
+                              // Small spinner while logging in
                               ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
                               : const Text(
-                            'Log in',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                                  'Log in',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
@@ -465,8 +465,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(3),
                             ),
                             child: rememberMe
-                                ? const Icon(Icons.check,
-                                size: 14, color: Colors.white)
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 14,
+                                    color: Colors.white,
+                                  )
                                 : null,
                           ),
                         ),
@@ -500,8 +503,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           const Text(
                             "Don't have an account? ",
-                            style:
-                            TextStyle(fontSize: 14, color: Colors.black87),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                            ),
                           ),
                           GestureDetector(
                             onTap: () {
