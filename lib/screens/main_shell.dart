@@ -31,7 +31,11 @@ class _MainShellState extends State<MainShell> {
     final List<Widget> pages = [
       DashboardScreen(userName: widget.userName),
       const InsightsScreen(),
-      WellnessScreen(userName: widget.userName),
+      WellnessScreen(
+        userName: widget.userName,
+        // "View OCPS contact details" -> go to the Profile tab
+        onOpenProfile: () => setState(() => selectedTab = 3),
+      ),
       const ProfileScreen(),
     ];
 

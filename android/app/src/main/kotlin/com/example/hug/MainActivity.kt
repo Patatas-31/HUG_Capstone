@@ -1,5 +1,6 @@
 package com.example.hug
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+// Health Connect permission screens need FlutterFragmentActivity.
+class MainActivity: FlutterFragmentActivity()

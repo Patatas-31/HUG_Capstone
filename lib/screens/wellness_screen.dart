@@ -1,44 +1,366 @@
 // Hug - Wellness screen (smartwatch status, vitals and PUP OCPS support)
 
+import 'dart:async';
+
+import 'package:health/health.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../constants/colors.dart';
+import '../services/health_service.dart';
 
-class WellnessScreen extends StatelessWidget {
+class WellnessScreen extends StatefulWidget {
   // Name shown in the smartwatch card (later this can come from the login)
   final String userName;
 
-  const WellnessScreen({super.key, this.userName = 'Juan'});
+  // Called when the user taps "View OCPS contact details"
+  // (the parent switches to the Profile tab)
+  final VoidCallback? onOpenProfile;
 
+  const WellnessScreen({super.key, this.userName = 'Juan', this.onOpenProfile});
+
+  @override
+  State<WellnessScreen> createState() => _WellnessScreenState();
+}
+
+class _WellnessScreenState extends State<WellnessScreen>
+    with WidgetsBindingObserver {
   // ---------------------------------------------------
-  // SAMPLE DATA (TODO: replace with smartwatch / backend data)
+  // REAL DATA (from Health Connect through HealthService)
   // ---------------------------------------------------
-  // Smartwatch card
-  static const String lastSynced = 'Just now';
-  static const int batteryPercent = 85;
-  static const bool isConnected = true;
+  Timer? _timer;
+  bool _connected = false;
+  bool _loading = true;
+  bool _refreshing = false; // true while a reload is running
+  int? _steps;
+  int? _heartRate;
+  DateTime? _lastSynced;
 
-  // Heart rate card
-  static const String heartRateStatus = 'Elevated';
-  static const String heartRateValue = '118 bpm';
+  // Sleep is not wired yet (waiting for real sleep records)
+  static const String sleepStatus = '--';
+  static const String sleepValue = '--';
 
-  // Stress response (EDA) card
-  static const String edaStatus = 'High';
-  static const String edaValue = '6.5 µS';
+  // How often the screen reloads by itself
+  static const Duration kAutoRefresh = Duration(seconds: 10);
 
-  // Sleep duration card
-  static const String sleepStatus = 'Short';
-  static const String sleepValue = '6h 30min';
+  // Data older than this is treated as "no recent data"
+  static const Duration kFreshLimit = Duration(minutes: 15);
 
   // Colors only used in this screen
   static const Color kBackground = Color(0xFFF4F4F4);
   static const Color kChip = Color(0xFFFBEDEE);
   static const Color kHeartIcon = Color(0xFFB5566B);
-  static const Color kEdaIcon = Color(0xFF6B5B95);
+  static const Color kStepsIcon = Color(0xFF6B5B95);
   static const Color kSleepIcon = Color(0xFFB59B5E);
   static const Color kConnectedDot = Color(0xFF7ED04B);
   static const Color kWatchBody = Color(0xFF2D3748);
   static const Color kWatchStrap = Color(0xFF8E9099);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _init();
+
+    // Reload automatically while the app is open and connected
+    _timer = Timer.periodic(kAutoRefresh, (_) {
+      if (_connected) _loadData(silent: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Reload when the user comes back to the app (e.g. from the watch app)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_connected) {
+        _loadData(silent: true);
+      } else {
+        _init();
+      }
+    }
+  }
+
+  // Check if the user connected inside Hug, then load the data
+  Future<void> _init() async {
+    bool connected = false;
+    try {
+      connected = await HealthService.instance.isConnected();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _connected = connected);
+
+    if (connected) {
+      await _loadData();
+    } else {
+      setState(() => _loading = false);
+    }
+  }
+
+  // silent = true: no "Loading..." text (used by the automatic reloads)
+  Future<void> _loadData({bool silent = false}) async {
+    if (_refreshing) return;
+    _refreshing = true;
+    if (!silent && mounted) setState(() => _loading = true);
+
+    try {
+      final steps = await HealthService.instance.todaySteps();
+      final hr = await HealthService.instance.latestHeartRate();
+      // The user may have disconnected while this was loading
+      if (!mounted || !_connected) return;
+      setState(() {
+        _steps = steps;
+        _heartRate = hr == null
+            ? null
+            : (hr.value as NumericHealthValue).numericValue.round();
+        _lastSynced = hr?.dateTo;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  // "Find your smartwatch" button: show the steps first, then ask permission
+  Future<void> _findSmartwatch() async {
+    final proceed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Find your smartwatch',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Hug reads your data through Health Connect. Before you continue:',
+              style: TextStyle(fontSize: 13, color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
+            _sheetStep(
+              '1',
+              'Wear your compatible smartwatch and pair it with its app.',
+            ),
+            _sheetStep('2', 'In that app, turn on sync to Health Connect.'),
+            _sheetStep(
+              '3',
+              'Tap Continue and allow heart rate, steps and sleep.',
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kCoral,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text(
+                  'Continue',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (proceed == true) await _connect();
+  }
+
+  Widget _sheetStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: kChip,
+            ),
+            child: Text(
+              number,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: kCoral,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
+  // Ask for permission, check for real watch data, then load it
+  Future<void> _connect() async {
+    final result = await HealthService.instance.connect();
+    if (!mounted) return;
+
+    switch (result) {
+      case ConnectResult.connected:
+        setState(() => _connected = true);
+        await _loadData();
+        break;
+      case ConnectResult.notInstalled:
+        _showMessage('Install Health Connect, then try again.');
+        break;
+      case ConnectResult.denied:
+        _showMessage('Permission was not granted.');
+        break;
+      case ConnectResult.noData:
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Text('No smartwatch data found'),
+            content: const Text(
+              'Hug could not find any data from your smartwatch. '
+              'Make sure your smartwatch is worn and paired, and that its app '
+              'is syncing to Health Connect. Then try again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK', style: TextStyle(color: kCoral)),
+              ),
+            ],
+          ),
+        );
+        break;
+    }
+  }
+
+  // Tap the "Connected" pill: ask first, then disconnect inside Hug only
+  Future<void> _confirmDisconnect() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Disconnect smartwatch?'),
+        content: const Text(
+          'Hug will stop reading your smartwatch data. '
+          'Your smartwatch app and Health Connect are not affected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Disconnect', style: TextStyle(color: kCoral)),
+          ),
+        ],
+      ),
+    );
+
+    if (yes != true) return;
+
+    await HealthService.instance.disconnect();
+    if (!mounted) return;
+    setState(() {
+      _connected = false;
+      _loading = false;
+      _steps = null;
+      _heartRate = null;
+      _lastSynced = null;
+    });
+  }
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  // ---------------------------------------------------
+  // HELPERS: turn raw numbers into text
+  // ---------------------------------------------------
+
+  // True when the newest heart rate record is recent enough
+  bool get _hasRecentData {
+    final t = _lastSynced;
+    if (t == null) return false;
+    return DateTime.now().difference(t) <= kFreshLimit;
+  }
+
+  String get _heartRateStatus {
+    final hr = _heartRate;
+    if (hr == null) return '--';
+    if (hr < 60) return 'Low';
+    if (hr <= 100) return 'Normal';
+    return 'Elevated';
+  }
+
+  String get _heartRateValue => _heartRate == null ? '--' : '$_heartRate bpm';
+
+  String get _stepsStatus {
+    final s = _steps;
+    if (s == null) return '--';
+    if (s < 3000) return 'Low';
+    if (s < 8000) return 'Moderate';
+    return 'Active';
+  }
+
+  String get _stepsValue =>
+      _steps == null ? '--' : '${_formatNumber(_steps!)} steps';
+
+  // 12345 -> 12,345
+  String _formatNumber(int n) {
+    final s = n.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(s[i]);
+    }
+    return buffer.toString();
+  }
+
+  // 19:34 -> 7:34 PM
+  String get _lastSyncedText {
+    final t = _lastSynced;
+    if (t == null) return _loading ? 'Loading...' : 'No data yet';
+    final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    final period = t.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12:$minute $period';
+  }
+
+  // Small text under the watch name
+  String get _watchCaption {
+    if (!_connected) return 'Connect to see your health data';
+    if (_hasRecentData) return 'Last synced: $_lastSyncedText';
+    if (_lastSynced == null) {
+      return _loading
+          ? 'Loading...'
+          : 'No data yet. Open your smartwatch app to sync.';
+    }
+    return 'Last synced: $_lastSyncedText\nOpen your smartwatch app to sync.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,57 +368,64 @@ class WellnessScreen extends StatelessWidget {
       color: kBackground,
       child: SafeArea(
         bottom: false,
-        child: SingleChildScrollView(
-          // Extra space at the bottom so the bottom bar does not cover content
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 130),
-          child: Column(
-            children: [
-              const Text(
-                'Wellness',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black,
+        child: RefreshIndicator(
+          // Pull down still works, but it is no longer needed
+          onRefresh: () async {
+            if (_connected) await _loadData();
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            // Extra space at the bottom so the bottom bar does not cover content
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 130),
+            child: Column(
+              children: [
+                const Text(
+                  'Wellness',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              buildWatchCard(),
-              const SizedBox(height: 12),
-              buildMetricCard(
-                label: 'Heart Rate',
-                status: heartRateStatus,
-                value: heartRateValue,
-                icon: Icons.favorite,
-                iconColor: kHeartIcon,
-                onTap: () {
-                  // TODO: open the Heart Rate details screen here
-                },
-              ),
-              const SizedBox(height: 10),
-              buildMetricCard(
-                label: 'Stress Response (EDA)',
-                status: edaStatus,
-                value: edaValue,
-                icon: Icons.show_chart,
-                iconColor: kEdaIcon,
-                onTap: () {
-                  // TODO: open the EDA details screen here
-                },
-              ),
-              const SizedBox(height: 10),
-              buildMetricCard(
-                label: 'Sleep Duration',
-                status: sleepStatus,
-                value: sleepValue,
-                icon: Icons.nightlight_round,
-                iconColor: kSleepIcon,
-                onTap: () {
-                  // TODO: open the Sleep details screen here
-                },
-              ),
-              const SizedBox(height: 10),
-              buildOcpsCard(),
-            ],
+                const SizedBox(height: 18),
+                buildWatchCard(),
+                const SizedBox(height: 12),
+                buildMetricCard(
+                  label: 'Heart Rate',
+                  status: _heartRateStatus,
+                  value: _heartRateValue,
+                  icon: Icons.favorite,
+                  iconColor: kHeartIcon,
+                  onTap: () {
+                    // TODO: open the Heart Rate details screen here
+                  },
+                ),
+                const SizedBox(height: 10),
+                buildMetricCard(
+                  label: 'Steps Today',
+                  status: _stepsStatus,
+                  value: _stepsValue,
+                  icon: Icons.directions_walk,
+                  iconColor: kStepsIcon,
+                  onTap: () {
+                    // TODO: open the Steps details screen here
+                  },
+                ),
+                const SizedBox(height: 10),
+                buildMetricCard(
+                  label: 'Sleep Duration',
+                  status: sleepStatus,
+                  value: sleepValue,
+                  icon: Icons.nightlight_round,
+                  iconColor: kSleepIcon,
+                  onTap: () {
+                    // TODO: open the Sleep details screen here
+                  },
+                ),
+                const SizedBox(height: 10),
+                buildOcpsCard(),
+              ],
+            ),
           ),
         ),
       ),
@@ -104,7 +433,7 @@ class WellnessScreen extends StatelessWidget {
   }
 
   // ---------------------------------------------------
-  // SMARTWATCH CARD: watch picture, name, sync, battery, status
+  // SMARTWATCH CARD: watch picture, name, sync, status
   // ---------------------------------------------------
   Widget buildWatchCard() {
     return Container(
@@ -126,7 +455,7 @@ class WellnessScreen extends StatelessWidget {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    "$userName's Smartwatch",
+                    "${widget.userName}'s Smartwatch",
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -135,14 +464,14 @@ class WellnessScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // Last sync and battery
+                // Last sync / hint
                 Text(
-                  'Last synced: $lastSynced  ·  Battery $batteryPercent%',
+                  _watchCaption,
                   textAlign: TextAlign.right,
                   style: const TextStyle(fontSize: 11, color: Colors.white),
                 ),
                 const SizedBox(height: 12),
-                buildConnectedPill(),
+                _connected ? buildStatusPill() : buildFindButton(),
               ],
             ),
           ),
@@ -151,35 +480,77 @@ class WellnessScreen extends StatelessWidget {
     );
   }
 
-  // White pill with a green dot (changes to Disconnected when not connected)
-  Widget buildConnectedPill() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white,
+  // White pill: green "Connected" when data is recent, grey otherwise.
+  // Tap it to disconnect (inside Hug only).
+  Widget buildStatusPill() {
+    final bool fresh = _hasRecentData;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
+        onTap: _confirmDisconnect,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: fresh ? kConnectedDot : Colors.grey,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                fresh ? 'Connected' : 'No recent data',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.keyboard_arrow_down,
+                size: 16,
+                color: Colors.black54,
+              ),
+            ],
+          ),
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isConnected ? kConnectedDot : Colors.grey,
-            ),
+    );
+  }
+
+  // White pill button (shown when NOT connected)
+  Widget buildFindButton() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: _findSmartwatch,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.watch_outlined, size: 16, color: Colors.black87),
+              SizedBox(width: 6),
+              Text(
+                'Find your smartwatch',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          Text(
-            isConnected ? 'Connected' : 'Disconnected',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -394,14 +765,12 @@ class WellnessScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          // Contact button
+          // Contact button: goes to the Profile tab (OCPS contact info is there)
           SizedBox(
             width: double.infinity,
             height: 40,
             child: ElevatedButton(
-              onPressed: () {
-                // TODO: open the OCPS contact details screen here
-              },
+              onPressed: widget.onOpenProfile,
               style: ElevatedButton.styleFrom(
                 backgroundColor: kCoral,
                 foregroundColor: Colors.white,
