@@ -1,5 +1,4 @@
 // Hug - Log in screen
-
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -7,6 +6,7 @@ import '../constants/colors.dart';
 import '../widgets/collaboration_footer.dart';
 import 'main_shell.dart';
 import 'signup_screen.dart';
+import '../services/auth_service.dart';
 
 // Turns everything the user types into CAPITAL letters.
 // We use this on the student number so "mn" becomes "MN".
@@ -158,9 +158,20 @@ class _LoginScreenState extends State<LoginScreen> {
   // Right now it always says "correct", so it goes straight to the
   // Home screen like before. Replace the body with your real backend call.
   Future<bool> checkLogin(String studentNumber, String password) async {
-    // TODO: call your backend here and return true only if the login is correct
-    return true;
+  try {
+    final authService = AuthService();
+
+    // Temporary test: sign in using the email associated
+    // with your manually created Supabase Auth account.
+    return await authService.signInWithEmail(
+      email: 'dan28847@gmail.com',
+      password: password,
+    );
+  } catch (error) {
+    debugPrint('HUG authentication failed: $error');
+    return false;
   }
+}
 
   // Runs when the Log in button is pressed
   Future<void> handleLogin() async {
