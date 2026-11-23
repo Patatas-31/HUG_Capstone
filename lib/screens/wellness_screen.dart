@@ -4,12 +4,14 @@ import 'dart:async';
 
 import 'package:health/health.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../constants/colors.dart';
 import '../services/health_service.dart';
 
 class WellnessScreen extends StatefulWidget {
-  // Name shown in the smartwatch card (later this can come from the login)
+  // Not used anymore (the name now comes from the logged-in user).
+  // Kept so other files that pass it do not break.
   final String userName;
 
   // Called when the user taps "View OCPS contact details"
@@ -350,6 +352,16 @@ class _WellnessScreenState extends State<WellnessScreen>
     return '$hour12:$minute $period';
   }
 
+  // Name shown on the smartwatch card:
+  // "------" when no watch is connected, otherwise the logged-in
+  // user's first name (saved in the metadata during sign up).
+  String get _watchName {
+    if (!_connected) return '------';
+    final meta = Supabase.instance.client.auth.currentUser?.userMetadata;
+    final first = (meta?['first_name'] as String?)?.trim() ?? '';
+    return first.isEmpty ? 'My Smartwatch' : "$first's Smartwatch";
+  }
+
   // Small text under the watch name
   String get _watchCaption {
     if (!_connected) return 'Connect to see your health data';
@@ -455,7 +467,7 @@ class _WellnessScreenState extends State<WellnessScreen>
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    "${widget.userName}'s Smartwatch",
+                    _watchName,
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -555,62 +567,17 @@ class _WellnessScreenState extends State<WellnessScreen>
     );
   }
 
-  // The watch drawn with simple shapes (TODO: replace with your image if you have one)
+  // Watch icon inside a white circle
+  // TODO: replace the Icon with Image.asset(...) if you have your own image
   Widget buildWatchPicture() {
-    return SizedBox(
-      width: 78,
-      height: 112,
-      child: Stack(
-        children: [
-          // Top strap
-          Positioned(
-            top: 0,
-            left: 16,
-            child: Container(
-              width: 42,
-              height: 34,
-              decoration: BoxDecoration(
-                color: kWatchStrap,
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          // Bottom strap
-          Positioned(
-            bottom: 0,
-            left: 16,
-            child: Container(
-              width: 42,
-              height: 34,
-              decoration: BoxDecoration(
-                color: kWatchStrap,
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          // Watch body with a heart and a pulse line
-          Positioned(
-            top: 18,
-            left: 0,
-            child: Container(
-              width: 74,
-              height: 76,
-              decoration: BoxDecoration(
-                color: kWatchBody,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.favorite, color: kCoral, size: 26),
-                  SizedBox(height: 2),
-                  Icon(Icons.show_chart, color: kStarYellow, size: 30),
-                ],
-              ),
-            ),
-          ),
-        ],
+    return Container(
+      width: 84,
+      height: 84,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
       ),
+      child: const Icon(Icons.watch, size: 46, color: kCoral),
     );
   }
 

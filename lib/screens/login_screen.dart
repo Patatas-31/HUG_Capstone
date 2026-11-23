@@ -1,11 +1,14 @@
 // Hug - Log in screen
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../constants/colors.dart';
 import '../widgets/collaboration_footer.dart';
 import 'main_shell.dart';
 import 'signup_screen.dart';
+import 'welcome_screen.dart';
+import 'forgot_password_screen.dart';
 import '../services/auth_service.dart';
 
 // Turns everything the user types into CAPITAL letters.
@@ -61,6 +64,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Red message for a wrong login (shown above the Log in button)
   String? loginError;
+
+  // Message to show when checkLogin fails
+  String loginFailMessage = 'Wrong student number or password.';
 
   // Student number format: 2024-13242-MN-0
   // (4 numbers - 5 numbers - 2 letters - 1 number)
@@ -154,24 +160,38 @@ class _LoginScreenState extends State<LoginScreen> {
   // ---------------------------------------------------
   // LOGIN CHECK (BACKEND)
   // ---------------------------------------------------
-  // Asks the server if the student number and password are correct.
-  // Right now it always says "correct", so it goes straight to the
-  // Home screen like before. Replace the body with your real backend call.
+  // 1. Find the email that belongs to the student number
+  //    (Supabase function: email_for_student_number)
+  // 2. Sign in with that email and the password
   Future<bool> checkLogin(String studentNumber, String password) async {
-  try {
-    final authService = AuthService();
+    // Default: same message for wrong student number or wrong password
+    loginFailMessage = 'Wrong student number or password.';
+    try {
+      final dynamic result = await Supabase.instance.client.rpc(
+        'email_for_student_number',
+        params: {'sn': studentNumber},
+      );
+      final String? email = result as String?;
+      debugPrint('HUG step 1 - email found: $email');
+      if (email == null || email.isEmpty) return false;
 
-    // Temporary test: sign in using the email associated
-    // with your manually created Supabase Auth account.
-    return await authService.signInWithEmail(
-      email: 'dan28847@gmail.com',
-      password: password,
-    );
-  } catch (error) {
-    debugPrint('HUG authentication failed: $error');
-    return false;
+      final authService = AuthService();
+      return await authService.signInWithEmail(
+        email: email,
+        password: password,
+      );
+    } on AuthException catch (error) {
+      if (error.code == 'email_not_confirmed' ||
+          error.message.toLowerCase().contains('email not confirmed')) {
+        loginFailMessage = 'Your email is not verified yet. Check your inbox for the 6-digit code.';
+      }
+      debugPrint('HUG authentication failed: $error');
+      return false;
+    } catch (error) {
+      debugPrint('HUG authentication failed: $error');
+      return false;
+    }
   }
-}
 
   // Runs when the Log in button is pressed
   Future<void> handleLogin() async {
@@ -203,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // We do not say which one is wrong (student number or password)
       setState(() {
         isLoggingIn = false;
-        loginError = 'Wrong student number or password.';
+        loginError = loginFailMessage;
       });
       return;
     }
@@ -314,7 +334,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Back arrow
                     GestureDetector(
                       onTap: () {
-                        Navigator.pop(context);
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        } else {
+                          // Nothing to go back to (for example after log out),
+                          // so go to the Welcome screen
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const WelcomeScreen(),
+                            ),
+                          );
+                        }
                       },
                       child: const Icon(
                         Icons.arrow_back,
@@ -492,7 +523,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Spacer(),
                         GestureDetector(
                           onTap: () {
-                            // TODO: go to the Forgot Password screen here
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const ForgotPasswordScreen(),
+                              ),
+                            );
                           },
                           child: const Text(
                             'Forgot Password?',
