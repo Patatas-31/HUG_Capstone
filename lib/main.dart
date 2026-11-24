@@ -1,11 +1,16 @@
-// Hug - app entry point
-// This file only starts the app and picks the first screen.
 
 import 'package:material_ui/material_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hug/screens/get_started_screen.dart';
 
-// Starts the app
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://fyauekwhdylocfzzknjt.supabase.co',
+    publishableKey: 'sb_publishable_zcF8B2eQ0F_tHrW_mkKwaw_Vn9fzenf',
+  );
+
   runApp(const HugApp());
 }
 
@@ -17,7 +22,6 @@ class HugApp extends StatelessWidget {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Hug',
-      // The app starts on the Get Started screen
       home: GetStartedScreen(),
     );
   }

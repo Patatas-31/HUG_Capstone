@@ -2,18 +2,23 @@
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+
 import '../constants/colors.dart';
 import '../widgets/collaboration_footer.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'login_screen.dart';
+import 'otp_screen.dart';
 
 // Turns everything the user types into CAPITAL letters.
 // We use this on the student number so "mn" becomes "MN".
 class UpperCaseTextFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue,
-      TextEditingValue newValue,
-      ) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     return newValue.copyWith(text: newValue.text.toUpperCase());
   }
 }
@@ -30,14 +35,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // TEXT BOXES AND FOCUS
   // ---------------------------------------------------
   // Text boxes: these hold what the user types
-  final TextEditingController studentNumberController =
-  TextEditingController();
+  final TextEditingController studentNumberController = TextEditingController();
   final TextEditingController firstNameController = TextEditingController();
   final TextEditingController middleNameController = TextEditingController();
   final TextEditingController lastNameController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController =
-  TextEditingController();
+      TextEditingController();
   final TextEditingController otherSuffixController = TextEditingController();
 
   // Focus nodes: we use these to jump to the first box that has an error
@@ -46,6 +51,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final FocusNode middleNameFocus = FocusNode();
   final FocusNode lastNameFocus = FocusNode();
   final FocusNode otherSuffixFocus = FocusNode();
+  final FocusNode emailFocus = FocusNode();
   final FocusNode passwordFocus = FocusNode();
   final FocusNode confirmPasswordFocus = FocusNode();
 
@@ -87,6 +93,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   String? middleNameError;
   String? lastNameError;
   String? otherSuffixError;
+  String? emailError;
   String? passwordError;
   String? confirmPasswordError;
 
@@ -105,8 +112,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // Words can be joined by a space, a hyphen (-), an apostrophe (') or
   // a period followed by a space (Ma. Cristina). A last period is allowed.
   // Examples that pass: Niño, Peña, Mary-Ann, Ma. Cristina, D'Souza
-  final RegExp namePattern =
-  RegExp(r"^[A-Za-zÑñ]+(?:(?:\.? |[-'’])[A-Za-zÑñ]+)*\.?$");
+  final RegExp namePattern = RegExp(
+    r"^[A-Za-zÑñ]+(?:(?:\.? |[-'’])[A-Za-zÑñ]+)*\.?$",
+  );
+
+  // Email format: name@domain.com (used to send the OTP)
+  final RegExp emailPattern = RegExp(
+    r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$',
+  );
 
   // "Other" suffix: letters and periods only (Esq., Ph.D.)
   final RegExp suffixPattern = RegExp(r'^[A-Za-z][A-Za-z.]*$');
@@ -115,6 +128,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final int maxStudentNumberLength = 15;
   final int maxNameLength = 50;
   final int maxSuffixLength = 10;
+  final int maxEmailLength = 100;
   final int minPasswordLength = 8;
   final int maxPasswordLength = 64;
 
@@ -136,17 +150,82 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   // Pairs of letters that almost never appear together in real names
   final List<String> rareLetterPairs = [
-    'bq', 'bx', 'cj', 'cv', 'cx', 'dx', 'fq', 'fx', 'fz', 'fw', 'fh', 'hf',
-    'gj', 'gq', 'gx', 'gf', 'hg', 'hj', 'hx', 'jd', 'jf', 'jg', 'jh', 'jk',
-    'jq', 'jx', 'jz', 'kg', 'kj', 'kq', 'kx', 'kz', 'lq', 'lx', 'mq', 'mx',
-    'pq', 'px', 'qq', 'sx', 'tq', 'vb', 'vf', 'vh', 'vj', 'vk', 'vm', 'vp',
-    'vq', 'vw', 'vx', 'vz', 'wq', 'wx', 'wz', 'xj', 'xx', 'zx',
+    'bq',
+    'bx',
+    'cj',
+    'cv',
+    'cx',
+    'dx',
+    'fq',
+    'fx',
+    'fz',
+    'fw',
+    'fh',
+    'hf',
+    'gj',
+    'gq',
+    'gx',
+    'gf',
+    'hg',
+    'hj',
+    'hx',
+    'jd',
+    'jf',
+    'jg',
+    'jh',
+    'jk',
+    'jq',
+    'jx',
+    'jz',
+    'kg',
+    'kj',
+    'kq',
+    'kx',
+    'kz',
+    'lq',
+    'lx',
+    'mq',
+    'mx',
+    'pq',
+    'px',
+    'qq',
+    'sx',
+    'tq',
+    'vb',
+    'vf',
+    'vh',
+    'vj',
+    'vk',
+    'vm',
+    'vp',
+    'vq',
+    'vw',
+    'vx',
+    'vz',
+    'wq',
+    'wx',
+    'wz',
+    'xj',
+    'xx',
+    'zx',
   ];
 
   // Letters that are next to each other on the keyboard
   final List<String> keyboardMash = [
-    'asdf', 'sdfg', 'dfgh', 'fghj', 'ghjk', 'hjkl', 'zxcv', 'xcvb',
-    'cvbn', 'vbnm', 'qwer', 'poiu', 'lkjh', 'mnbv',
+    'asdf',
+    'sdfg',
+    'dfgh',
+    'fghj',
+    'ghjk',
+    'hjkl',
+    'zxcv',
+    'xcvb',
+    'cvbn',
+    'vbnm',
+    'qwer',
+    'poiu',
+    'lkjh',
+    'mnbv',
   ];
 
   // Returns true if the name looks like random typing.
@@ -281,6 +360,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return null;
   }
 
+  // Email check (the OTP will be sent here)
+  String? validateEmail() {
+    final String value = emailController.text.trim();
+    if (value.isEmpty) {
+      return 'Email is required.';
+    }
+    if (value.length > maxEmailLength) {
+      return 'Email must be $maxEmailLength characters or less.';
+    }
+    if (!emailPattern.hasMatch(value) || value.contains('..')) {
+      return 'Enter a valid email. Example: name@gmail.com';
+    }
+    return null;
+  }
+
   // Password check
   String? validatePassword() {
     final String password = passwordController.text;
@@ -311,12 +405,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     // The password must not contain the student number or the name
     final String lowerPassword = password.toLowerCase();
-    final String studentNumber =
-    studentNumberController.text.trim().toLowerCase();
+    final String studentNumber = studentNumberController.text
+        .trim()
+        .toLowerCase();
     if (studentNumber.isNotEmpty && lowerPassword.contains(studentNumber)) {
       return 'Password must not contain your student number.';
     }
-    final String firstName = cleanSpaces(firstNameController.text).toLowerCase();
+    final String firstName = cleanSpaces(firstNameController.text)
+        .toLowerCase();
     final String lastName = cleanSpaces(lastNameController.text).toLowerCase();
     // Only compare names with 3 or more letters, so short names do not
     // block normal passwords by accident
@@ -351,6 +447,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     final String? middleError = validateMiddleName();
     final String? lastError = validateLastName();
     final String? suffixError = validateOtherSuffix();
+    final String? emailErr = validateEmail();
     final String? createError = validatePassword();
     final String? confirmError = validateConfirmPassword();
 
@@ -361,6 +458,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       middleNameError = middleError;
       lastNameError = lastError;
       otherSuffixError = suffixError;
+      emailError = emailErr;
       passwordError = createError;
       confirmPasswordError = confirmError;
     });
@@ -376,6 +474,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       focusOn(lastNameFocus);
     } else if (suffixError != null) {
       focusOn(otherSuffixFocus);
+    } else if (emailErr != null) {
+      focusOn(emailFocus);
     } else if (createError != null) {
       focusOn(passwordFocus);
     } else if (confirmError != null) {
@@ -387,6 +487,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         middleError == null &&
         lastError == null &&
         suffixError == null &&
+        emailErr == null &&
         createError == null &&
         confirmError == null;
   }
@@ -401,6 +502,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       middleNameError = validateMiddleName();
       lastNameError = validateLastName();
       otherSuffixError = validateOtherSuffix();
+      emailError = validateEmail();
       passwordError = validatePassword();
       confirmPasswordError = validateConfirmPassword();
     });
@@ -426,12 +528,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // ---------------------------------------------------
   // DUPLICATE CHECK (BACKEND)
   // ---------------------------------------------------
-  // Asks the server if this student number is already registered.
-  // Right now it always says "not taken". Replace the body with your
-  // real backend or database call.
+  // Asks Supabase if this student number is already registered
+  // (uses the student_number_taken function from supabase_setup.sql).
   Future<bool> isStudentNumberTaken(String studentNumber) async {
-    // TODO: call your backend here and return true if it already exists
-    return false;
+    try {
+      final dynamic result = await Supabase.instance.client.rpc(
+        'student_number_taken',
+        params: {'sn': studentNumber},
+      );
+      return result == true;
+    } catch (error) {
+      debugPrint('Student number check failed: $error');
+      return false;
+    }
   }
 
   // ---------------------------------------------------
@@ -439,12 +548,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // ---------------------------------------------------
   // Trims extra spaces and makes the student number uppercase.
   void cleanUpInputs() {
-    studentNumberController.text =
-        studentNumberController.text.trim().toUpperCase();
+    studentNumberController.text = studentNumberController.text
+        .trim()
+        .toUpperCase();
     firstNameController.text = cleanSpaces(firstNameController.text);
     middleNameController.text = cleanSpaces(middleNameController.text);
     lastNameController.text = cleanSpaces(lastNameController.text);
     otherSuffixController.text = cleanSpaces(otherSuffixController.text);
+    emailController.text = emailController.text.trim().toLowerCase();
   }
 
   // Runs when the Next button is pressed
@@ -463,8 +574,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     setState(() {
       isChecking = true;
     });
-    final bool taken =
-    await isStudentNumberTaken(studentNumberController.text);
+    final bool taken = await isStudentNumberTaken(studentNumberController.text);
 
     // The screen may be closed while we waited
     if (!mounted) return;
@@ -481,7 +591,49 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    // TODO: go to the next Sign up screen here
+    // Create the account. Supabase sends the OTP code to the email.
+    setState(() {
+      isChecking = true;
+    });
+    try {
+      await Supabase.instance.client.auth.signUp(
+        email: emailController.text,
+        password: passwordController.text,
+        data: {
+          'student_number': studentNumberController.text,
+          'first_name': firstNameController.text,
+          'middle_name': middleNameController.text,
+          'last_name': lastNameController.text,
+          // "None" or nothing chosen = no suffix
+          'suffix': selectedSuffix == 'Other'
+              ? otherSuffixController.text
+              : (selectedSuffix == null || selectedSuffix == 'None'
+                    ? ''
+                    : selectedSuffix),
+        },
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        isChecking = false;
+        emailError = e.message;
+      });
+      focusOn(emailFocus);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      isChecking = false;
+    });
+
+    // Go to the OTP screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => OtpScreen(email: emailController.text),
+      ),
+    );
   }
 
   // ---------------------------------------------------
@@ -520,6 +672,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     firstNameController.dispose();
     middleNameController.dispose();
     lastNameController.dispose();
+    emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
     otherSuffixController.dispose();
@@ -528,6 +681,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     middleNameFocus.dispose();
     lastNameFocus.dispose();
     otherSuffixFocus.dispose();
+    emailFocus.dispose();
     passwordFocus.dispose();
     confirmPasswordFocus.dispose();
     super.dispose();
@@ -733,8 +887,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               borderRadius: BorderRadius.circular(3),
                             ),
                             child: noMiddleName
-                                ? const Icon(Icons.check,
-                                size: 14, color: Colors.white)
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 14,
+                                    color: Colors.white,
+                                  )
                                 : null,
                           ),
                         ),
@@ -834,6 +991,33 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       const SizedBox(height: 18),
                     ],
 
+                    // Email (OTP will be sent here)
+                    buildLabel('Email'),
+                    const SizedBox(height: 8),
+                    buildField(
+                      controller: emailController,
+                      focusNode: emailFocus,
+                      hint: 'Email',
+                      prefix: const Icon(
+                        Icons.email_outlined,
+                        color: Colors.black54,
+                        size: 24,
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      formatters: [
+                        // No spaces in an email
+                        FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                        LengthLimitingTextInputFormatter(maxEmailLength),
+                      ],
+                    ),
+                    if (emailError != null)
+                      buildError(emailError)
+                    else
+                      buildHelper(
+                        'We will send a one-time password (OTP) here.',
+                      ),
+                    const SizedBox(height: 18),
+
                     // Create password
                     buildLabel('Create Password'),
                     const SizedBox(height: 8),
@@ -871,7 +1055,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     else
                       buildHelper(
                         'At least $minPasswordLength characters with uppercase, '
-                            'lowercase, a number and a special character.',
+                        'lowercase, a number and a special character.',
                       ),
                     const SizedBox(height: 18),
 
@@ -926,22 +1110,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             shape: const StadiumBorder(),
                           ),
                           child: isChecking
-                          // Small spinner while checking
+                              // Small spinner while checking
                               ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
                               : const Text(
-                            'Next',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                                  'Next',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
@@ -954,8 +1138,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         children: [
                           const Text(
                             'Already have an account? ',
-                            style:
-                            TextStyle(fontSize: 14, color: Colors.black87),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                            ),
                           ),
                           GestureDetector(
                             onTap: () {

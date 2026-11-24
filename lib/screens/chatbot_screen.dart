@@ -1,5 +1,6 @@
 // Hug - Chatbot screen ("Chat with Pat")
 // Opened by the big star button in the bottom bar.
+import '../services/chatbot_service.dart';
 
 import 'dart:math';
 
@@ -31,6 +32,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // STATE
   // ---------------------------------------------------
   // The text box and the list scroll
+  final ChatbotService chatbotService = ChatbotService();
+
   final TextEditingController messageController = TextEditingController();
   final ScrollController scrollController = ScrollController();
 
@@ -59,9 +62,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // Right now it only waits a moment and returns a fixed placeholder text.
   // Replace the body with your real backend / AI call.
   Future<String> getPatReply(String userMessage) async {
-    // TODO: call your chatbot backend here and return Pat's answer
-    await Future.delayed(const Duration(milliseconds: 900));
-    return "I'm here and I'm listening. Tell me more about how you feel.";
+    return await chatbotService.getReply(userMessage);
   }
 
   // ---------------------------------------------------
@@ -82,7 +83,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
     scrollToBottom();
 
-    final String reply = await getPatReply(message);
+    String reply;
+
+    try {
+      reply = await getPatReply(message);
+    } catch (error) {
+        debugPrint('Pat chatbot error: $error');
+        reply = 'Sorry, I am having trouble connecting right now. '
+        'Please try again in a moment.';
+}
 
     // The screen may be closed while we waited
     if (!mounted) return;
